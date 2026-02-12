@@ -1,10 +1,10 @@
-const CACHE_NAME = "miaocarb-v1";
+const CACHE_NAME = "miaocarb-v2";
 const ASSETS = [
-  "./",
-  "./index.html",
-  "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png"
+  "/miaocarb/",
+  "/miaocarb/index.html",
+  "/miaocarb/manifest.json",
+  "/miaocarb/icon-192.png",
+  "/miaocarb/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {

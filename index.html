@@ -2923,8 +2923,15 @@
 
     <script>
         if ("serviceWorker" in navigator) {
-            window.addEventListener("load", () => {
-                navigator.serviceWorker.register("./sw.js");
+            window.addEventListener("load", async () => {
+            try {
+                const reg = await navigator.serviceWorker.register("/miaocarb/sw.js", {
+                scope: "/miaocarb/"
+                });
+                console.log("SW OK scope:", reg.scope);
+            } catch (e) {
+                console.log("SW FAIL:", e);
+            }
             });
         }
     </script>
