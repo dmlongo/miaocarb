@@ -409,43 +409,70 @@ function endCrop(e) {
 }
 
 function applyCrop() {
-    const canvas = document.getElementById('cropCanvas');
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
 
+    // Safety
+    if (!cropImage) {
+        console.log("No cropImage available, using original image");
+        labelImage = originalLabelImage;
+        document.getElementById("labelCropControls").style.display = "none";
+        extractTextFromImage(labelImage);
+        return;
+    }
 
-    // Crop coordinates are already in actual image size
-    const cropWidth = Math.abs(cropEndX - cropStartX);
-    const cropHeight = Math.abs(cropEndY - cropStartY);
-    const cropX = Math.min(cropStartX, cropEndX);
-    const cropY = Math.min(cropStartY, cropEndY);
+    const imgW = cropImage.width;
+    const imgH = cropImage.height;
 
-    console.log('Applying crop:', cropX, cropY, cropWidth, cropHeight);
+    // Order coords (handles drag in any direction)
+    let x1 = Math.min(cropStartX, cropEndX);
+    let y1 = Math.min(cropStartY, cropEndY);
+    let x2 = Math.max(cropStartX, cropEndX);
+    let y2 = Math.max(cropStartY, cropEndY);
+
+    // Clamp to image bounds (prevents negative / out-of-range cropping)
+    x1 = Math.max(0, Math.min(imgW, x1));
+    y1 = Math.max(0, Math.min(imgH, y1));
+    x2 = Math.max(0, Math.min(imgW, x2));
+    y2 = Math.max(0, Math.min(imgH, y2));
+
+    // Convert to integer pixels
+    const cropX = Math.round(x1);
+    const cropY = Math.round(y1);
+    const cropWidth = Math.round(x2 - x1);
+    const cropHeight = Math.round(y2 - y1);
+
+    console.log("Applying crop:", cropX, cropY, cropWidth, cropHeight);
 
     if (cropWidth > 10 && cropHeight > 10) {
-        // Apply crop
         tempCanvas.width = cropWidth;
         tempCanvas.height = cropHeight;
+
         tempCtx.drawImage(
             cropImage,
             cropX, cropY, cropWidth, cropHeight,
             0, 0, cropWidth, cropHeight
         );
 
-        labelImage = tempCanvas.toDataURL('image/jpeg', 0.95);
+        // PNG is usually better for OCR (less blur than JPEG)
+        labelImage = tempCanvas.toDataURL("image/png");
 
         // Update preview
-        document.getElementById('labelPreview').src = labelImage;
+        document.getElementById("labelPreview").src = labelImage;
 
-        console.log('Crop applied successfully');
+        console.log("Crop applied successfully");
     } else {
-        console.log('Crop area too small, using original image');
+        console.log("Crop area too small, using original image");
+        // IMPORTANT: explicit fallback so OCR doesn't use stale/undefined labelImage
+        labelImage = originalLabelImage;
+        document.getElementById("labelPreview").src = labelImage;
     }
 
     // Start OCR
-    document.getElementById('labelCropControls').style.display = 'none';
+    document.getElementById("labelCropControls").style.display = "none";
     extractTextFromImage(labelImage);
 }
+
 
 function skipCrop() {
     labelImage = originalLabelImage;
