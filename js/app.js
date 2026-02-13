@@ -292,9 +292,21 @@ function setupCropCanvas() {
 
 function startCrop(e) {
     // Expect a PointerEvent
-    e.preventDefault && e.preventDefault();
-    const canvas = document.getElementById('cropCanvas');
+    if (e && e.preventDefault) e.preventDefault();
+
+    // If another pointer is already cropping, ignore this one
+    if (activePointerId !== null) return;
+
+    const canvas = document.getElementById("cropCanvas");
     const rect = canvas.getBoundingClientRect();
+
+    // Capture pointer first (best effort)
+    activePointerId = e.pointerId;
+    try {
+        if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+    } catch (err) {
+        // Even if capture fails, keep activePointerId so we still filter other pointers
+    }
 
     // Calculate scale ratio between display size and actual canvas size
     const scaleX = canvas.width / rect.width;
@@ -312,22 +324,17 @@ function startCrop(e) {
     cropEndY = cropStartY;
 
     isCropping = true;
-    // Capture pointer so we receive move/up outside canvas
-    try {
-        canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-        activePointerId = e.pointerId;
-    } catch (err) {
-        activePointerId = null;
-    }
 
-    console.log('Start crop - Display:', (clientX - rect.left), (clientY - rect.top));
-    console.log('Start crop - Canvas:', cropStartX, cropStartY);
-    console.log('Scale:', scaleX, scaleY);
+    console.log("Start crop - Display:", (clientX - rect.left), (clientY - rect.top));
+    console.log("Start crop - Canvas:", cropStartX, cropStartY);
+    console.log("Scale:", scaleX, scaleY);
 }
 
+
 function drawCrop(e) {
-    if (e && e.preventDefault) e.preventDefault();
     if (!isCropping || !cropImage) return;
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (e && e.preventDefault) e.preventDefault();
 
     const canvas = document.getElementById('cropCanvas');
     const ctx = canvas.getContext('2d');
@@ -380,7 +387,10 @@ function drawCrop(e) {
 }
 
 function endCrop(e) {
+    if (!isCropping) return;
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
     if (e && e.preventDefault) e.preventDefault();
+
     // If an event is provided, update final coordinates
     if (e && typeof e.clientX === "number" && typeof e.clientY === "number") {
         try {
