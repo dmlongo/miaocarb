@@ -48,7 +48,7 @@ function initializeEventListeners() {
 
 // ============= ONBOARDING =============
 function checkOnboarding() {
-    const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
+    const hasSeenOnboarding = appStorage.get('hasSeenOnboarding');
     if (!hasSeenOnboarding) {
         document.getElementById('onboarding').classList.add('show');
     }
@@ -68,12 +68,12 @@ function skipOnboarding() {
     document.getElementById('onboarding').classList.remove('show');
     document.getElementById('onboarding2').classList.remove('show');
     document.getElementById('onboarding3').classList.remove('show');
-    localStorage.setItem('hasSeenOnboarding', 'true');
+    appStorage.set('hasSeenOnboarding', 'true');
 }
 
 function completeOnboarding() {
     document.getElementById('onboarding3').classList.remove('show');
-    localStorage.setItem('hasSeenOnboarding', 'true');
+    appStorage.set('hasSeenOnboarding', 'true');
     // Navigate to profile
     switchTab('profile');
 }
@@ -953,10 +953,10 @@ function saveFood() {
         item.frontImageId = frontId;
         item.labelImageId = labelId;
 
-        let catalog = storage.getJSON('foodCatalog', []);
+        let catalog = appStorage.getJSON('foodCatalog', []);
         catalog.unshift(item);
 
-        if (!storage.setJSON('foodCatalog', catalog)) {
+        if (!appStorage.setJSON('foodCatalog', catalog)) {
             showError('Memoria piena: impossibile salvare il catalogo. Prova a rimuovere alcuni prodotti.');
             // Cleanup images we just stored (optional)
             if (frontId) await imagesDB.delete(frontId);
@@ -975,7 +975,7 @@ function saveFood() {
 
 // ============= CATALOG =============
 async function loadCatalog() {
-    let catalog = storage.getJSON('foodCatalog', []);
+    let catalog = appStorage.getJSON('foodCatalog', []);
     const foodList = document.getElementById('foodList');
     const tipBanner = document.getElementById('tipBanner');
 
@@ -1111,11 +1111,11 @@ function useToday(name, grams) {
 async function deleteFood(index) {
     if (!confirm('Eliminare questo cibo dal catalogo?')) return;
 
-    let catalog = storage.getJSON('foodCatalog', []);
+    let catalog = appStorage.getJSON('foodCatalog', []);
     const removed = catalog[index];
 
     catalog.splice(index, 1);
-    if (!storage.setJSON('foodCatalog', catalog)) return;
+    if (!appStorage.setJSON('foodCatalog', catalog)) return;
 
     // Remove associated images from IndexedDB (best-effort)
     try {
@@ -1133,7 +1133,7 @@ async function deleteFood(index) {
 async function cleanupOrphanImages() {
     try {
         await imagesDB.init();
-        const catalog = storage.getJSON('foodCatalog', []);
+        const catalog = appStorage.getJSON('foodCatalog', []);
         const used = new Set();
         for (const item of catalog) {
             if (item && item.frontImageId) used.add(item.frontImageId);
@@ -1157,14 +1157,14 @@ async function cleanupOrphanImages() {
 
 // ============= SHARE =============
 async function openShare(index) {
-    let catalog = storage.getJSON('foodCatalog', []);
+    let catalog = appStorage.getJSON('foodCatalog', []);
     // Migrate legacy base64 images from localStorage to IndexedDB (one-time)
     try {
         await imagesDB.init();
         const mig = await imagesDB.migrateCatalogImages(catalog);
         if (mig && mig.changed) {
             catalog = mig.catalog;
-            storage.setJSON('foodCatalog', catalog);
+            appStorage.setJSON('foodCatalog', catalog);
         }
     } catch (e) {
         console.warn('IndexedDB migration failed:', e);
@@ -1239,7 +1239,7 @@ function saveProfile() {
     profile.RER = Math.round(RER);
 
     catProfile = profile;
-    localStorage.setItem('catProfile', JSON.stringify(profile));
+    appStorage.set('catProfile', JSON.stringify(profile));
 
     document.getElementById('profileSummary').style.display = 'block';
     document.getElementById('profileCalories').innerHTML = `
@@ -1255,9 +1255,9 @@ function saveProfile() {
 }
 
 function loadProfile() {
-    const saved = storage.get('catProfile');
+    const saved = appStorage.get('catProfile');
     if (saved) {
-        catProfile = storage.parseJSON(saved, null);
+        catProfile = appStorage.parseJSON(saved, null);
         document.getElementById('catName').value = catProfile.name || '';
         document.getElementById('currentWeight').value = catProfile.currentWeight;
         document.getElementById('idealWeight').value = catProfile.idealWeight;
@@ -1286,7 +1286,7 @@ function loadProfile() {
 function deleteProfile() {
     if (!confirm('Eliminare il profilo del gatto?\n\nI cibi nel catalogo non verranno eliminati.')) return;
 
-    storage.remove('catProfile');
+    appStorage.remove('catProfile');
     catProfile = null;
 
     document.getElementById('catName').value = '';
@@ -1303,7 +1303,7 @@ function deleteProfile() {
 
 // ============= SETTINGS =============
 function loadSettings() {
-    const extraLarge = localStorage.getItem('extraLargeText') === 'true';
+    const extraLarge = appStorage.get('extraLargeText') === 'true';
     document.getElementById('extraLargeText').checked = extraLarge;
     if (extraLarge) {
         document.body.classList.add('extra-large-text');
@@ -1312,7 +1312,7 @@ function loadSettings() {
 
 function toggleTextSize() {
     const isChecked = document.getElementById('extraLargeText').checked;
-    localStorage.setItem('extraLargeText', isChecked);
+    appStorage.set('extraLargeText', isChecked);
     document.body.classList.toggle('extra-large-text', isChecked);
 }
 

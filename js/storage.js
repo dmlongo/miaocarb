@@ -48,5 +48,5 @@
   }
 
   // Expose globally (keeps current inline-HTML approach working)
-  window.Storage = { get, set, remove, getJSON, setJSON, parseJSON };
+  window.appStorage = { get, set, remove, getJSON, setJSON, parseJSON };
 })();
