@@ -5,6 +5,7 @@ let currentAnalysis = null;
 let catProfile = null;
 let currentWizardStep = 1;
 let shareData = null;
+let cropImage = null;
 let cropStartX = 0;
 let cropStartY = 0;
 let cropEndX = 0;
@@ -251,6 +252,9 @@ function setupCropCanvas() {
     const img = new Image();
 
     img.onload = function () {
+        // cache image for cropping
+        cropImage = img;
+
         // Set canvas to actual image size
         canvas.width = img.width;
         canvas.height = img.height;
@@ -304,7 +308,7 @@ function startCrop(e) {
 }
 
 function drawCrop(e) {
-    if (!isCropping) return;
+    if (!isCropping || !cropImage) return;
 
     const canvas = document.getElementById('cropCanvas');
     const ctx = canvas.getContext('2d');
@@ -323,41 +327,38 @@ function drawCrop(e) {
     cropEndY = (clientY - rect.top) * scaleY;
 
     // Redraw image
-    const img = new Image();
-    img.onload = function () {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        // Draw crop rectangle at actual canvas coordinates
-        ctx.strokeStyle = '#667eea';
-        ctx.lineWidth = 4;
-        ctx.setLineDash([10, 10]);
-        ctx.strokeRect(
-            cropStartX,
-            cropStartY,
-            cropEndX - cropStartX,
-            cropEndY - cropStartY
-        );
-        ctx.setLineDash([]);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(cropImage, 0, 0, canvas.width, canvas.height);
 
-        // Draw semi-transparent overlay outside crop area
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    // Draw crop rectangle at actual canvas coordinates
+    ctx.strokeStyle = '#667eea';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([10, 10]);
+    ctx.strokeRect(
+        cropStartX,
+        cropStartY,
+        cropEndX - cropStartX,
+        cropEndY - cropStartY
+    );
+    ctx.setLineDash([]);
 
-        const minX = Math.min(cropStartX, cropEndX);
-        const minY = Math.min(cropStartY, cropEndY);
-        const maxX = Math.max(cropStartX, cropEndX);
-        const maxY = Math.max(cropStartY, cropEndY);
+    // Draw semi-transparent overlay outside crop area
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
 
-        // Top
-        ctx.fillRect(0, 0, canvas.width, minY);
-        // Left
-        ctx.fillRect(0, minY, minX, maxY - minY);
-        // Right
-        ctx.fillRect(maxX, minY, canvas.width - maxX, maxY - minY);
-        // Bottom
-        ctx.fillRect(0, maxY, canvas.width, canvas.height - maxY);
-    };
-    img.src = originalLabelImage;
+    const minX = Math.min(cropStartX, cropEndX);
+    const minY = Math.min(cropStartY, cropEndY);
+    const maxX = Math.max(cropStartX, cropEndX);
+    const maxY = Math.max(cropStartY, cropEndY);
+
+    // Top
+    ctx.fillRect(0, 0, canvas.width, minY);
+    // Left
+    ctx.fillRect(0, minY, minX, maxY - minY);
+    // Right
+    ctx.fillRect(maxX, minY, canvas.width - maxX, maxY - minY);
+    // Bottom
+    ctx.fillRect(0, maxY, canvas.width, canvas.height - maxY);
 }
 
 function endCrop() {
@@ -370,41 +371,38 @@ function applyCrop() {
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d');
 
-    const img = new Image();
-    img.onload = function () {
-        // Crop coordinates are already in actual image size
-        const cropWidth = Math.abs(cropEndX - cropStartX);
-        const cropHeight = Math.abs(cropEndY - cropStartY);
-        const cropX = Math.min(cropStartX, cropEndX);
-        const cropY = Math.min(cropStartY, cropEndY);
 
-        console.log('Applying crop:', cropX, cropY, cropWidth, cropHeight);
+    // Crop coordinates are already in actual image size
+    const cropWidth = Math.abs(cropEndX - cropStartX);
+    const cropHeight = Math.abs(cropEndY - cropStartY);
+    const cropX = Math.min(cropStartX, cropEndX);
+    const cropY = Math.min(cropStartY, cropEndY);
 
-        if (cropWidth > 10 && cropHeight > 10) {
-            // Apply crop
-            tempCanvas.width = cropWidth;
-            tempCanvas.height = cropHeight;
-            tempCtx.drawImage(
-                img,
-                cropX, cropY, cropWidth, cropHeight,
-                0, 0, cropWidth, cropHeight
-            );
+    console.log('Applying crop:', cropX, cropY, cropWidth, cropHeight);
 
-            labelImage = tempCanvas.toDataURL('image/jpeg', 0.95);
+    if (cropWidth > 10 && cropHeight > 10) {
+        // Apply crop
+        tempCanvas.width = cropWidth;
+        tempCanvas.height = cropHeight;
+        tempCtx.drawImage(
+            cropImage,
+            cropX, cropY, cropWidth, cropHeight,
+            0, 0, cropWidth, cropHeight
+        );
 
-            // Update preview
-            document.getElementById('labelPreview').src = labelImage;
+        labelImage = tempCanvas.toDataURL('image/jpeg', 0.95);
 
-            console.log('Crop applied successfully');
-        } else {
-            console.log('Crop area too small, using original image');
-        }
+        // Update preview
+        document.getElementById('labelPreview').src = labelImage;
 
-        // Start OCR
-        document.getElementById('labelCropControls').style.display = 'none';
-        extractTextFromImage(labelImage);
-    };
-    img.src = originalLabelImage;
+        console.log('Crop applied successfully');
+    } else {
+        console.log('Crop area too small, using original image');
+    }
+
+    // Start OCR
+    document.getElementById('labelCropControls').style.display = 'none';
+    extractTextFromImage(labelImage);
 }
 
 function skipCrop() {
