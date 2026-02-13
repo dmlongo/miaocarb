@@ -1173,3 +1173,11 @@ input:checked+.toggle-slider:before {
 .advanced-content.show {
     max-height: 1000px;
 }
+
+/* Prevent page scrolling/zooming while cropping */
+#cropCanvas {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}

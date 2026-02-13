@@ -275,10 +275,11 @@ function setupCropCanvas() {
 
         // Setup crop interaction using Pointer Events for mouse+touch+pen
         // Use pointer capture so move/up are delivered even if pointer leaves the canvas
-        canvas.addEventListener('pointerdown', startCrop);
-        canvas.addEventListener('pointermove', drawCrop);
-        canvas.addEventListener('pointerup', endCrop);
-        canvas.addEventListener('pointercancel', endCrop);
+        canvas.addEventListener('pointerdown', startCrop, { passive: false });
+        canvas.addEventListener('pointermove', drawCrop, { passive: false });
+        canvas.addEventListener('pointerup', endCrop, { passive: false });
+        canvas.addEventListener('pointercancel', endCrop, { passive: false });
+
     };
 
     img.src = originalLabelImage;
@@ -320,6 +321,7 @@ function startCrop(e) {
 }
 
 function drawCrop(e) {
+    if (e && e.preventDefault) e.preventDefault();
     if (!isCropping || !cropImage) return;
 
     const canvas = document.getElementById('cropCanvas');
@@ -373,8 +375,9 @@ function drawCrop(e) {
 }
 
 function endCrop(e) {
+    if (e && e.preventDefault) e.preventDefault();
     // If an event is provided, update final coordinates
-    if (e && (e.clientX || e.clientY)) {
+    if (e && typeof e.clientX === "number" && typeof e.clientY === "number") {
         try {
             const canvas = document.getElementById('cropCanvas');
             const rect = canvas.getBoundingClientRect();
