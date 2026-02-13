@@ -1430,7 +1430,9 @@ function showSuccess(message) {
     // Small unobtrusive update banner
     function ensureUpdateBanner() {
         let bar = document.getElementById("update-banner");
-        if (bar) return bar;
+        if (bar) {
+            return { bar, btn: bar.querySelector("button") };
+        }
 
         bar = document.createElement("div");
         bar.id = "update-banner";
