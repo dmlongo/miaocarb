@@ -13,6 +13,14 @@ let cropEndY = 0;
 let isCropping = false;
 let originalLabelImage = null;
 let activePointerId = null;
+// 2-canvas crop UI (base + overlay)
+let cropStage = null;
+let cropBaseCanvas = null;
+let cropOverlayCanvas = null;
+let cropBaseCtx = null;
+let cropOverlayCtx = null;
+let cropListenersAdded = false;
+
 
 // ============= INITIALIZATION =============
 document.addEventListener('DOMContentLoaded', function () {
@@ -248,161 +256,133 @@ function closeZoom() {
 }
 
 function setupCropCanvas() {
-    const canvas = document.getElementById('cropCanvas');
-    const ctx = canvas.getContext('2d');
+    cropStage = document.getElementById('cropStage');
+    cropBaseCanvas = document.getElementById('cropBaseCanvas');
+    cropOverlayCanvas = document.getElementById('cropOverlayCanvas');
+
+    if (!cropStage || !cropBaseCanvas || !cropOverlayCanvas) {
+        console.error('Crop stage elements not found. Did you update index.html?');
+        return;
+    }
+
+    cropBaseCtx = cropBaseCanvas.getContext('2d');
+    cropOverlayCtx = cropOverlayCanvas.getContext('2d');
+
     const img = new Image();
 
     img.onload = function () {
-        // cache image for cropping
+        // cache image for cropping (used later by applyCrop)
         cropImage = img;
 
-        // Set canvas to actual image size
-        canvas.width = img.width;
-        canvas.height = img.height;
+        // Set both canvases to the *real* image size
+        cropBaseCanvas.width = img.width;
+        cropBaseCanvas.height = img.height;
+        cropOverlayCanvas.width = img.width;
+        cropOverlayCanvas.height = img.height;
 
-        // Draw image at actual size
-        ctx.drawImage(img, 0, 0);
+        // Draw image ONCE on base canvas
+        cropBaseCtx.clearRect(0, 0, cropBaseCanvas.width, cropBaseCanvas.height);
+        cropBaseCtx.drawImage(img, 0, 0);
 
-        // Display canvas scaled to fit screen
+        // Clear overlay
+        cropOverlayCtx.clearRect(0, 0, cropOverlayCanvas.width, cropOverlayCanvas.height);
+
+        // Show stage and scale to fit screen
         const maxWidth = Math.min(500, window.innerWidth - 60);
-        canvas.style.maxWidth = maxWidth + 'px';
-        canvas.style.width = '100%';
-        canvas.style.height = 'auto';
-        canvas.style.display = 'block';
+        cropStage.style.maxWidth = maxWidth + 'px';
+        cropStage.style.display = 'block';
 
-        console.log('Canvas actual size:', canvas.width, 'x', canvas.height);
-        console.log('Canvas display size:', canvas.offsetWidth, 'x', canvas.offsetHeight);
-
-        // Setup crop interaction using Pointer Events for mouse+touch+pen
-        // Use pointer capture so move/up are delivered even if pointer leaves the canvas
-        // Bind crop pointer events only once (avoid duplicate handlers)
-        if (!canvas.dataset.cropBound) {
-            canvas.addEventListener('pointerdown', startCrop, { passive: false });
-            canvas.addEventListener('pointermove', drawCrop, { passive: false });
-            canvas.addEventListener('pointerup', endCrop, { passive: false });
-            canvas.addEventListener('pointercancel', endCrop, { passive: false });
-            canvas.dataset.cropBound = "1";
+        // Attach listeners once (important: avoids duplicates if you retake photos)
+        if (!cropListenersAdded) {
+            cropOverlayCanvas.addEventListener('pointerdown', startCrop, { passive: false });
+            cropOverlayCanvas.addEventListener('pointermove', drawCrop, { passive: false });
+            cropOverlayCanvas.addEventListener('pointerup', endCrop);
+            cropOverlayCanvas.addEventListener('pointercancel', endCrop);
+            cropListenersAdded = true;
         }
-
-
     };
 
     img.src = originalLabelImage;
 }
 
 function startCrop(e) {
-    // Expect a PointerEvent
-    if (e && e.preventDefault) e.preventDefault();
+    e.preventDefault && e.preventDefault();
 
-    // If another pointer is already cropping, ignore this one
-    if (activePointerId !== null) return;
+    const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
+    if (!canvas) return;
 
-    const canvas = document.getElementById("cropCanvas");
     const rect = canvas.getBoundingClientRect();
-
-    // Capture pointer first (best effort)
-    activePointerId = e.pointerId;
-    try {
-        if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
-    } catch (err) {
-        // Even if capture fails, keep activePointerId so we still filter other pointers
-    }
-
-    // Calculate scale ratio between display size and actual canvas size
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    const clientX = e.clientX;
-    const clientY = e.clientY;
+    cropStartX = (e.clientX - rect.left) * scaleX;
+    cropStartY = (e.clientY - rect.top) * scaleY;
 
-    // Convert to actual canvas coordinates
-    cropStartX = (clientX - rect.left) * scaleX;
-    cropStartY = (clientY - rect.top) * scaleY;
-
-    // Initialize end coords so a click-without-move still has a defined box
     cropEndX = cropStartX;
     cropEndY = cropStartY;
 
     isCropping = true;
 
-    console.log("Start crop - Display:", (clientX - rect.left), (clientY - rect.top));
-    console.log("Start crop - Canvas:", cropStartX, cropStartY);
-    console.log("Scale:", scaleX, scaleY);
+    try {
+        canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+        activePointerId = e.pointerId;
+    } catch {
+        activePointerId = null;
+    }
 }
+
 
 
 function drawCrop(e) {
     if (!isCropping || !cropImage) return;
-    if (activePointerId !== null && e.pointerId !== activePointerId) return;
-    if (e && e.preventDefault) e.preventDefault();
 
-    const canvas = document.getElementById('cropCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
+    const ctx = cropOverlayCtx || (canvas && canvas.getContext('2d'));
+    if (!canvas || !ctx) return;
+
     const rect = canvas.getBoundingClientRect();
-
-    // Calculate scale ratio
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    // Get coordinates relative to canvas display
-    const clientX = e.clientX;
-    const clientY = e.clientY;
+    cropEndX = (e.clientX - rect.left) * scaleX;
+    cropEndY = (e.clientY - rect.top) * scaleY;
 
-    // Convert to actual canvas coordinates
-    cropEndX = (clientX - rect.left) * scaleX;
-    cropEndY = (clientY - rect.top) * scaleY;
-
-    // Redraw image
+    // Clear ONLY the overlay (base image remains untouched)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(cropImage, 0, 0, canvas.width, canvas.height);
 
-    // Draw crop rectangle at actual canvas coordinates
-    ctx.strokeStyle = '#667eea';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([10, 10]);
-    ctx.strokeRect(
-        cropStartX,
-        cropStartY,
-        cropEndX - cropStartX,
-        cropEndY - cropStartY
-    );
-    ctx.setLineDash([]);
-
-    // Draw semi-transparent overlay outside crop area
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-
+    // Rectangle coords
     const minX = Math.min(cropStartX, cropEndX);
     const minY = Math.min(cropStartY, cropEndY);
     const maxX = Math.max(cropStartX, cropEndX);
     const maxY = Math.max(cropStartY, cropEndY);
 
-    // Top
-    ctx.fillRect(0, 0, canvas.width, minY);
-    // Left
-    ctx.fillRect(0, minY, minX, maxY - minY);
-    // Right
-    ctx.fillRect(maxX, minY, canvas.width - maxX, maxY - minY);
-    // Bottom
-    ctx.fillRect(0, maxY, canvas.width, canvas.height - maxY);
+    // Outline
+    ctx.strokeStyle = '#667eea';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([10, 10]);
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.setLineDash([]);
+
+    // Shade outside crop area
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, minY);                          // top
+    ctx.fillRect(0, minY, minX, maxY - minY);                        // left
+    ctx.fillRect(maxX, minY, canvas.width - maxX, maxY - minY);      // right
+    ctx.fillRect(0, maxY, canvas.width, canvas.height - maxY);       // bottom
 }
 
-function endCrop(e) {
-    if (!isCropping) return;
-    if (activePointerId !== null && e.pointerId !== activePointerId) return;
-    if (e && e.preventDefault) e.preventDefault();
 
-    // If an event is provided, update final coordinates
+function endCrop(e) {
+    // Update final coordinates if provided
     if (e && typeof e.clientX === "number" && typeof e.clientY === "number") {
         try {
-            const canvas = document.getElementById('cropCanvas');
+            const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-            cropEndX = (clientX - rect.left) * scaleX;
-            cropEndY = (clientY - rect.top) * scaleY;
-        } catch (err) {
+            cropEndX = (e.clientX - rect.left) * scaleX;
+            cropEndY = (e.clientY - rect.top) * scaleY;
+        } catch {
             // ignore
         }
     }
@@ -411,17 +391,25 @@ function endCrop(e) {
 
     // Release pointer capture if set
     try {
-        const canvas = document.getElementById('cropCanvas');
+        const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
         if (activePointerId != null) {
             canvas.releasePointerCapture && canvas.releasePointerCapture(activePointerId);
             activePointerId = null;
         }
-    } catch (err) {
+    } catch {
         activePointerId = null;
     }
-
-    console.log('End crop at:', cropEndX, cropEndY);
 }
+
+function hideCropStageAndClear() {
+    if (cropOverlayCtx && cropOverlayCanvas) {
+        cropOverlayCtx.clearRect(0, 0, cropOverlayCanvas.width, cropOverlayCanvas.height);
+    }
+    if (cropStage) cropStage.style.display = 'none';
+    // optional: release big image memory once we move to OCR
+    cropImage = null;
+}
+
 
 function applyCrop() {
     const tempCanvas = document.createElement("canvas");
@@ -432,6 +420,7 @@ function applyCrop() {
         console.log("No cropImage available, using original image");
         labelImage = originalLabelImage;
         document.getElementById("labelCropControls").style.display = "none";
+        hideCropStageAndClear();
         extractTextFromImage(labelImage);
         return;
     }
@@ -485,6 +474,7 @@ function applyCrop() {
 
     // Start OCR
     document.getElementById("labelCropControls").style.display = "none";
+    hideCropStageAndClear();
     extractTextFromImage(labelImage);
 }
 
@@ -492,6 +482,7 @@ function applyCrop() {
 function skipCrop() {
     labelImage = originalLabelImage;
     document.getElementById('labelCropControls').style.display = 'none';
+    hideCropStageAndClear();
     extractTextFromImage(labelImage);
 }
 
@@ -501,8 +492,8 @@ function retakeLabelPhoto() {
     const preview = document.getElementById('labelPreview');
     preview.style.display = 'none';
     preview.onclick = null;
+    hideCropStageAndClear();
     document.getElementById('labelCropControls').style.display = 'none';
-    document.getElementById('cropCanvas').style.display = 'none';
     document.getElementById('labelCameraInput').value = '';
     document.getElementById('labelGalleryInput').value = '';
 }

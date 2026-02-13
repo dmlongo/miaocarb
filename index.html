@@ -140,8 +140,10 @@
                             <img id="labelPreview" class="preview-image" alt="Etichetta">
 
                             <div id="labelCropControls" style="display: none; margin-top: 15px;">
-                                <canvas id="cropCanvas"
-                                    style="max-width: 100%; border: 2px solid var(--primary); border-radius: 8px; cursor: crosshair; display: none;"></canvas>
+                                <div id="cropStage" class="crop-stage">
+                                    <canvas id="cropBaseCanvas"></canvas>
+                                    <canvas id="cropOverlayCanvas"></canvas>
+                                </div>
                                 <div style="margin-top: 15px;">
                                     <p style="font-size: 14px; color: var(--gray-600); margin-bottom: 10px;">
                                         💡 Clicca e trascina per ritagliare solo la tabella nutrizionale
