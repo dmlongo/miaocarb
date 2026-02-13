@@ -275,10 +275,15 @@ function setupCropCanvas() {
 
         // Setup crop interaction using Pointer Events for mouse+touch+pen
         // Use pointer capture so move/up are delivered even if pointer leaves the canvas
-        canvas.addEventListener('pointerdown', startCrop, { passive: false });
-        canvas.addEventListener('pointermove', drawCrop, { passive: false });
-        canvas.addEventListener('pointerup', endCrop, { passive: false });
-        canvas.addEventListener('pointercancel', endCrop, { passive: false });
+        // Bind crop pointer events only once (avoid duplicate handlers)
+        if (!canvas.dataset.cropBound) {
+            canvas.addEventListener('pointerdown', startCrop, { passive: false });
+            canvas.addEventListener('pointermove', drawCrop, { passive: false });
+            canvas.addEventListener('pointerup', endCrop, { passive: false });
+            canvas.addEventListener('pointercancel', endCrop, { passive: false });
+            canvas.dataset.cropBound = "1";
+        }
+
 
     };
 
