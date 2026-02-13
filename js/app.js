@@ -12,6 +12,7 @@ let cropEndX = 0;
 let cropEndY = 0;
 let isCropping = false;
 let originalLabelImage = null;
+let activePointerId = null;
 
 // ============= INITIALIZATION =============
 document.addEventListener('DOMContentLoaded', function () {
@@ -272,19 +273,20 @@ function setupCropCanvas() {
         console.log('Canvas actual size:', canvas.width, 'x', canvas.height);
         console.log('Canvas display size:', canvas.offsetWidth, 'x', canvas.offsetHeight);
 
-        // Setup crop interaction
-        canvas.onmousedown = startCrop;
-        canvas.onmousemove = drawCrop;
-        canvas.onmouseup = endCrop;
-        canvas.ontouchstart = (e) => { e.preventDefault(); startCrop(e.touches[0]); };
-        canvas.ontouchmove = (e) => { e.preventDefault(); drawCrop(e.touches[0]); };
-        canvas.ontouchend = endCrop;
+        // Setup crop interaction using Pointer Events for mouse+touch+pen
+        // Use pointer capture so move/up are delivered even if pointer leaves the canvas
+        canvas.addEventListener('pointerdown', startCrop);
+        canvas.addEventListener('pointermove', drawCrop);
+        canvas.addEventListener('pointerup', endCrop);
+        canvas.addEventListener('pointercancel', endCrop);
     };
 
     img.src = originalLabelImage;
 }
 
 function startCrop(e) {
+    // Expect a PointerEvent
+    e.preventDefault && e.preventDefault();
     const canvas = document.getElementById('cropCanvas');
     const rect = canvas.getBoundingClientRect();
 
@@ -292,15 +294,25 @@ function startCrop(e) {
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    // Get coordinates relative to canvas display
-    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
     // Convert to actual canvas coordinates
     cropStartX = (clientX - rect.left) * scaleX;
     cropStartY = (clientY - rect.top) * scaleY;
 
+    // Initialize end coords so a click-without-move still has a defined box
+    cropEndX = cropStartX;
+    cropEndY = cropStartY;
+
     isCropping = true;
+    // Capture pointer so we receive move/up outside canvas
+    try {
+        canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+        activePointerId = e.pointerId;
+    } catch (err) {
+        activePointerId = null;
+    }
 
     console.log('Start crop - Display:', (clientX - rect.left), (clientY - rect.top));
     console.log('Start crop - Canvas:', cropStartX, cropStartY);
@@ -319,15 +331,14 @@ function drawCrop(e) {
     const scaleY = canvas.height / rect.height;
 
     // Get coordinates relative to canvas display
-    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
     // Convert to actual canvas coordinates
     cropEndX = (clientX - rect.left) * scaleX;
     cropEndY = (clientY - rect.top) * scaleY;
 
     // Redraw image
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(cropImage, 0, 0, canvas.width, canvas.height);
 
@@ -361,8 +372,36 @@ function drawCrop(e) {
     ctx.fillRect(0, maxY, canvas.width, canvas.height - maxY);
 }
 
-function endCrop() {
+function endCrop(e) {
+    // If an event is provided, update final coordinates
+    if (e && (e.clientX || e.clientY)) {
+        try {
+            const canvas = document.getElementById('cropCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clientX = e.clientX;
+            const clientY = e.clientY;
+            cropEndX = (clientX - rect.left) * scaleX;
+            cropEndY = (clientY - rect.top) * scaleY;
+        } catch (err) {
+            // ignore
+        }
+    }
+
     isCropping = false;
+
+    // Release pointer capture if set
+    try {
+        const canvas = document.getElementById('cropCanvas');
+        if (activePointerId != null) {
+            canvas.releasePointerCapture && canvas.releasePointerCapture(activePointerId);
+            activePointerId = null;
+        }
+    } catch (err) {
+        activePointerId = null;
+    }
+
     console.log('End crop at:', cropEndX, cropEndY);
 }
 
