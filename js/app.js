@@ -422,12 +422,13 @@ function startCrop(e) {
 
 
 
+let cropRafPending = false;
+
 function drawCrop(e) {
     if (!isCropping || !cropImage) return;
 
     const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
-    const ctx = cropOverlayCtx || (canvas && canvas.getContext('2d'));
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -435,6 +436,18 @@ function drawCrop(e) {
 
     cropEndX = (e.clientX - rect.left) * scaleX;
     cropEndY = (e.clientY - rect.top) * scaleY;
+
+    if (cropRafPending) return;
+    cropRafPending = true;
+    requestAnimationFrame(renderCropOverlay);
+}
+
+function renderCropOverlay() {
+    cropRafPending = false;
+
+    const canvas = cropOverlayCanvas || document.getElementById('cropOverlayCanvas');
+    const ctx = cropOverlayCtx || (canvas && canvas.getContext('2d'));
+    if (!canvas || !ctx) return;
 
     // Clear ONLY the overlay (base image remains untouched)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
