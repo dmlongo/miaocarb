@@ -1,6 +1,6 @@
 // Dual-environment SW (localhost + GitHub Pages)
 const CACHE_PREFIX = "miaocarb";
-const CACHE_VERSION = "20260214191000";
+const CACHE_VERSION = "20260214210000";
 const CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 
 const SCOPE_URL = new URL(self.registration.scope);
@@ -15,6 +15,12 @@ const PRECACHE_URLS = [
   p("manifest.json"),
   p("js/storage.js"),
   p("js/idb.js"),
+  p("js/state.js"),
+  p("js/ui.js"),
+  p("js/ocr.js"),
+  p("js/analysis.js"),
+  p("js/catalog.js"),
+  p("js/profile.js"),
   p("js/app.js"),
   p("assets/icon-192.png"),
   p("assets/icon-512.png"),
