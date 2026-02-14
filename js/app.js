@@ -128,9 +128,6 @@ function switchTab(tabName, tabEl) {
 
 // ============= SWIPE NAVIGATION =============
 function initSwipeNavigation() {
-    const card = document.querySelector('.card');
-    if (!card) return;
-
     const SWIPE_THRESHOLD = 50;
 
     function onStart(x, y, target) {
@@ -138,15 +135,6 @@ function initSwipeNavigation() {
         swipeStartX = x;
         swipeStartY = y;
         swipeTracking = true;
-    }
-
-    function onMove(x, y) {
-        if (!swipeTracking) return;
-        const dy = Math.abs(y - swipeStartY);
-        const dx = Math.abs(x - swipeStartX);
-        if (dy > 10 && dy > dx) {
-            swipeTracking = false;
-        }
     }
 
     function onEnd(x, y) {
@@ -163,32 +151,24 @@ function initSwipeNavigation() {
     }
 
     // Touch events (mobile)
-    card.addEventListener('touchstart', function (e) {
+    document.addEventListener('touchstart', function (e) {
         if (e.touches.length !== 1) return;
         onStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
     }, { passive: true });
 
-    card.addEventListener('touchmove', function (e) {
-        if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: true });
-
-    card.addEventListener('touchend', function (e) {
+    document.addEventListener('touchend', function (e) {
         onEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }, { passive: true });
 
     // Mouse events (desktop fallback)
     let mouseDown = false;
-    card.addEventListener('mousedown', function (e) {
+    document.addEventListener('mousedown', function (e) {
         if (e.button !== 0) return;
         mouseDown = true;
         onStart(e.clientX, e.clientY, e.target);
     });
 
-    card.addEventListener('mousemove', function (e) {
-        if (mouseDown) onMove(e.clientX, e.clientY);
-    });
-
-    card.addEventListener('mouseup', function (e) {
+    document.addEventListener('mouseup', function (e) {
         if (!mouseDown) return;
         mouseDown = false;
         onEnd(e.clientX, e.clientY);
