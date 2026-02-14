@@ -21,6 +21,13 @@ let cropBaseCtx = null;
 let cropOverlayCtx = null;
 let cropListenersAdded = false;
 
+// Swipe navigation state
+const TAB_ORDER = ['catalog', 'food', 'profile'];
+let currentTabIndex = 0;
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeTracking = false;
+
 
 // ============= INITIALIZATION =============
 document.addEventListener('DOMContentLoaded', function () {
@@ -52,6 +59,9 @@ function initializeEventListeners() {
     document.getElementById('shareSheet').addEventListener('click', function (e) {
         if (e.target === this) closeShare();
     });
+
+    // Swipe between tabs
+    initSwipeNavigation();
 }
 
 // ============= ONBOARDING =============
@@ -88,6 +98,7 @@ function completeOnboarding() {
 
 // ============= TAB SWITCHING =============
 function switchTab(tabName, tabEl) {
+    currentTabIndex = TAB_ORDER.indexOf(tabName);
     // Update tab buttons
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -113,6 +124,51 @@ function switchTab(tabName, tabEl) {
     } else if (tabName === 'profile') {
         loadProfile();
     }
+}
+
+// ============= SWIPE NAVIGATION =============
+function initSwipeNavigation() {
+    const card = document.querySelector('.card');
+    if (!card) return;
+
+    const SWIPE_THRESHOLD = 50;
+
+    card.addEventListener('touchstart', function (e) {
+        if (e.target.closest('.crop-stage')) return;
+        if (e.touches.length !== 1) return;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        swipeTracking = true;
+    }, { passive: true });
+
+    card.addEventListener('touchmove', function (e) {
+        if (!swipeTracking) return;
+        const dy = Math.abs(e.touches[0].clientY - swipeStartY);
+        const dx = Math.abs(e.touches[0].clientX - swipeStartX);
+        if (dy > 10 && dy > dx) {
+            swipeTracking = false;
+        }
+    }, { passive: true });
+
+    card.addEventListener('touchend', function (e) {
+        if (!swipeTracking) return;
+        swipeTracking = false;
+
+        const dx = e.changedTouches[0].clientX - swipeStartX;
+        const dy = e.changedTouches[0].clientY - swipeStartY;
+
+        if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+        if (Math.abs(dy) > Math.abs(dx)) return;
+
+        navigateTab(dx < 0 ? 1 : -1);
+    }, { passive: true });
+}
+
+function navigateTab(direction) {
+    const newIndex = currentTabIndex + direction;
+    if (newIndex < 0 || newIndex >= TAB_ORDER.length) return;
+    currentTabIndex = newIndex;
+    switchTab(TAB_ORDER[currentTabIndex]);
 }
 
 // ============= WIZARD NAVIGATION =============
