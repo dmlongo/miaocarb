@@ -571,6 +571,21 @@ function showOCR() {
 }
 
 // ============= OCR =============
+let tesseractLoaded = false;
+function ensureTesseract() {
+    if (tesseractLoaded || typeof Tesseract !== 'undefined') {
+        tesseractLoaded = true;
+        return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        s.onload = () => { tesseractLoaded = true; resolve(); };
+        s.onerror = () => reject(new Error('Impossibile caricare il motore OCR'));
+        document.head.appendChild(s);
+    });
+}
+
 async function extractTextFromImage(imageData) {
     const loading = document.getElementById('loadingOCR');
     loading.classList.add('show');
@@ -578,6 +593,9 @@ async function extractTextFromImage(imageData) {
     try {
         // Preprocess image for better OCR
         const preprocessedImage = await preprocessImage(imageData);
+
+        // Load Tesseract.js on demand (not loaded at page start)
+        await ensureTesseract();
 
         // Run OCR with multiple languages
         const result = await Tesseract.recognize(preprocessedImage, 'eng+ita', {
