@@ -133,35 +133,66 @@ function initSwipeNavigation() {
 
     const SWIPE_THRESHOLD = 50;
 
-    card.addEventListener('touchstart', function (e) {
-        if (e.target.closest('.crop-stage')) return;
-        if (e.touches.length !== 1) return;
-        swipeStartX = e.touches[0].clientX;
-        swipeStartY = e.touches[0].clientY;
+    function onStart(x, y, target) {
+        if (target.closest('.crop-stage')) return;
+        swipeStartX = x;
+        swipeStartY = y;
         swipeTracking = true;
-    }, { passive: true });
+    }
 
-    card.addEventListener('touchmove', function (e) {
+    function onMove(x, y) {
         if (!swipeTracking) return;
-        const dy = Math.abs(e.touches[0].clientY - swipeStartY);
-        const dx = Math.abs(e.touches[0].clientX - swipeStartX);
+        const dy = Math.abs(y - swipeStartY);
+        const dx = Math.abs(x - swipeStartX);
         if (dy > 10 && dy > dx) {
             swipeTracking = false;
         }
-    }, { passive: true });
+    }
 
-    card.addEventListener('touchend', function (e) {
+    function onEnd(x, y) {
         if (!swipeTracking) return;
         swipeTracking = false;
 
-        const dx = e.changedTouches[0].clientX - swipeStartX;
-        const dy = e.changedTouches[0].clientY - swipeStartY;
+        const dx = x - swipeStartX;
+        const dy = y - swipeStartY;
 
         if (Math.abs(dx) < SWIPE_THRESHOLD) return;
         if (Math.abs(dy) > Math.abs(dx)) return;
 
         navigateTab(dx < 0 ? 1 : -1);
+    }
+
+    // Touch events (mobile)
+    card.addEventListener('touchstart', function (e) {
+        if (e.touches.length !== 1) return;
+        onStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
     }, { passive: true });
+
+    card.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    card.addEventListener('touchend', function (e) {
+        onEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }, { passive: true });
+
+    // Mouse events (desktop fallback)
+    let mouseDown = false;
+    card.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        mouseDown = true;
+        onStart(e.clientX, e.clientY, e.target);
+    });
+
+    card.addEventListener('mousemove', function (e) {
+        if (mouseDown) onMove(e.clientX, e.clientY);
+    });
+
+    card.addEventListener('mouseup', function (e) {
+        if (!mouseDown) return;
+        mouseDown = false;
+        onEnd(e.clientX, e.clientY);
+    });
 }
 
 function navigateTab(direction) {
