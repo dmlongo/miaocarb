@@ -399,150 +399,348 @@ async function preprocessImage(imageData) {
 }
 
 function parseNutritionValues(text) {
-    // Aggressive pre-processing to handle line breaks and formatting
-    let cleanText = text.toLowerCase();
+    // ---------- PRE-PROCESSING ----------
+    let cleanText = (text || "").toLowerCase();
+
+    // Normalize apostrophes (tenore d’acqua -> d'acqua)
+    cleanText = cleanText.replace(/[’‘`]/g, "'");
 
     // Remove all hyphens followed by whitespace/newlines (line breaks)
-    cleanText = cleanText.replace(/-[\s\n\r]+/g, '');
-
+    cleanText = cleanText.replace(/-[\s\n\r]+/g, "");
     // Remove standalone hyphens
-    cleanText = cleanText.replace(/\s+-\s+/g, ' ');
+    cleanText = cleanText.replace(/\s+-\s+/g, " ");
 
     // Normalize all whitespace to single spaces
-    cleanText = cleanText.replace(/[\n\r\t]+/g, ' ');
-    cleanText = cleanText.replace(/\s+/g, ' ');
+    cleanText = cleanText.replace(/[\n\r\t]+/g, " ");
+    cleanText = cleanText.replace(/\s+/g, " ").trim();
 
-    console.log('=== OCR PARSING ===');
-    console.log('Original text:', text);
-    console.log('Cleaned text:', cleanText);
+    console.log("=== OCR PARSING ===");
+    console.log("Original text:", text);
+    console.log("Cleaned text:", cleanText);
 
-    // Improved patterns with multiple variations including formal Italian terms
+    // ---------- HELPERS ----------
+    const fixOcrNumber = (valueStr) => {
+        // Handle OCR errors: O→0, l→1, S→5, I→1
+        let v = valueStr
+            .replace(/o/gi, "0")
+            .replace(/[li]/gi, "1")
+            .replace(/s/gi, "5");
+
+        // Convert comma to dot
+        v = v.replace(",", ".");
+
+        // Keep only digits + dot
+        v = v.replace(/[^\d.]/g, "");
+
+        return v;
+    };
+
+    const parseNumber = (valueStr) => {
+        const fixed = fixOcrNumber(valueStr);
+        const n = parseFloat(fixed);
+        return Number.isFinite(n) ? n : null;
+    };
+
+    // Try to isolate an "analysis" section to reduce false positives (optional)
+    const getLikelyAnalysisSection = (t) => {
+        const anchors = [
+            "componenti analitici",
+            "costituenti analitici",
+            "analytical constituents",
+            "guaranteed analysis",
+            "typical analysis",
+            "analysis:"
+        ];
+        const stopWords = [
+            "additivi",
+            "additives",
+            "composizione",
+            "composition",
+            "ingredienti",
+            "ingredients",
+            "istruzioni",
+            "feeding",
+            "ration"
+        ];
+
+        let start = -1;
+        for (const a of anchors) {
+            const i = t.indexOf(a);
+            if (i !== -1 && (start === -1 || i < start)) start = i;
+        }
+        if (start === -1) return t;
+
+        let end = t.length;
+        for (const s of stopWords) {
+            const j = t.indexOf(s, start + 1);
+            if (j !== -1 && j < end) end = j;
+        }
+        return t.slice(start, end);
+    };
+
+    const analysisText = getLikelyAnalysisSection(cleanText);
+
+    // Common number pattern (percent-ish nutrients)
+    // (capture group MUST be last for your existing logic)
+    const num = "(\\d+(?:[.,]\\d+)?)";
+    // Allow optional (min/max) markers between label and value
+    const minmax = "(?:\\s*\\(?\\s*(?:min(?:imum)?|max(?:imum)?)\\s*\\)?\\s*)?";
+    // Allow optional "crude"/"grezzo" descriptor
+    const crudeIt = "(?:\\s*(?:grezz[aeio]|grezzo|grezza|grezze|grezzi))?";
+    const crudeEn = "(?:\\s*(?:crude))?";
+
+    // ---------- PATTERNS ----------
     const patterns = {
         protein: [
-            /protein[ae]?\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /prot[.,\s]*(\d+[.,]?\d*)\s*%/i
+            // IT + EN + CP
+            new RegExp(
+                `(?:\\bcp\\b|crude\\s*protein|protein(?:e)?|proteine?|proteina)${crudeIt}${crudeEn}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // Short "prot. 30%" variants
+            new RegExp(`\\bprot\\.?\\s*[:\\-]?\\s*${num}\\s*%?`, "i")
         ],
+
         fat: [
-            /grass[io]\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /fat\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /lipid[ie]?\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /materia\s+grassa\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /tenore.*?grassa\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            // More flexible: any "grassa" followed by number
-            /grassa\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i
+            // IT: grassi/grasso (+ grezzo) + numero
+            new RegExp(
+                `(?:grassi?|grasso)${crudeIt}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // IT: oli e grassi
+            new RegExp(
+                `(?:oli\\s*(?:e|&)\\s*grassi?)${crudeIt}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // EN: oils and fats / crude oils and fats
+            new RegExp(
+                `(?:crude\\s*)?oils?\\s*(?:and|&)\\s*fats?${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // EN: crude fat / fat
+            new RegExp(
+                `(?:crude\\s*fat|\\bfat\\b)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // Lipidi/lipids
+            new RegExp(
+                `(?:lipid[ie]?|lipids?)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // Your existing “materia grassa / tenore … grassa”
+            new RegExp(`materia\\s+grassa${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i"),
+            new RegExp(`tenore.*?grassa${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i")
         ],
+
         fiber: [
-            /fibr[ae]\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /fiber\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /grezze\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i
+            // IT: fibra/fibre + grezza/e
+            new RegExp(
+                `(?:fibra|fibre)${crudeIt}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // EN: crude fiber/fibre(s)
+            new RegExp(
+                `(?:crude\\s*fib(?:er|re)s?|fib(?:er|re)s?)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // Abbrev CF (avoid false positives by requiring %)
+            new RegExp(`\\bcf\\b${minmax}\\s*[:\\-]?\\s*${num}\\s*%`, "i"),
+            // Your old "grezze: x" fallback for tables
+            new RegExp(`\\bgrezz[aei]\\s*[:\\-]?\\s*${num}\\s*%?`, "i")
         ],
-        moisture: [
-            /umidit[aà]\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /moisture\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /acqua\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i
-        ],
+
         ash: [
-            /cener[ie]\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /ash\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /inorganica\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /materia\s+inorganica\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            // More flexible: "inorg" with OCR errors (0 instead of o, 1 instead of i)
-            /in[o0]rg[a@]nic[a@]\s*[:\-]?\s*(\d+[.,]?\d*)\s*%?/i,
-            /mat.*?in[o0]rg.*?\s*(\d+[.,]?\d*)\s*%?/i,
-            // Ultra flexible: just look for numbers near "inorg"
-            /in.{0,3}rg.{0,10}\s*(\d+[.,]?\d*)\s*%?/i
+            // IT: ceneri/cenere + grezze/a
+            new RegExp(
+                `(?:ceneri|cenere)${crudeIt}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // EN: crude ash / ash
+            new RegExp(
+                `(?:crude\\s*ash|\\bash\\b)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // IT/EN inorganic matter variants (keeping your robust ones)
+            new RegExp(`(?:materia\\s+inorganica|inorganic\\s*matter)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i"),
+            new RegExp(`in[o0]rg[a@]nic[a@]${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i"),
+            new RegExp(`mat.*?in[o0]rg.*?${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i"),
+            new RegExp(`in.{0,3}rg.{0,10}${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`, "i")
         ],
-        kcal: [
-            /(\d+)\s*kcal/i,
-            /energia.*?(\d+)\s*kcal/i
+
+        moisture: [
+            // IT: umidità/umidita
+            new RegExp(
+                `(?:umidit[aà]|umidita)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // IT: acqua / tenore d'acqua
+            new RegExp(
+                `(?:tenore\\s*(?:d'|di)?\\s*acqua|acqua)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            ),
+            // EN: moisture / water
+            new RegExp(
+                `(?:moisture|\\bwater\\b)${minmax}\\s*[:\\-]?\\s*${num}\\s*%?`,
+                "i"
+            )
         ]
     };
 
+    // Energy is special: can be kcal/kg, kcal/100g, kJ, ME...
+    const parseEnergyToKcalPer100g = (t) => {
+        // match: number + unit + optional /basis (kg|100g) + optional ME markers around
+        // capture groups order: value, unit, basis (optional)
+        const re = /(?:energia|energy|valore\s+energetico|caloric\s+content|metabolizzabile|metabolizable\s+energy|me)?\s*[:\-]?\s*(\d+(?:[.,]\d+)?)\s*(kcal|kj)\s*(?:\/\s*(kg|100\s*g|100g)|\s+per\s+(kg|100\s*g|100g))?/i;
+
+        // Also accept "xxxx kcal/kg me"
+        const re2 = /(\d+(?:[.,]\d+)?)\s*(kcal|kj)\s*\/\s*(kg|100\s*g|100g)/i;
+
+        const candidates = [];
+        for (const r of [re, re2]) {
+            let m;
+            // global scan with exec-like loop
+            const rg = new RegExp(r.source, r.flags.includes("g") ? r.flags : r.flags + "g");
+            while ((m = rg.exec(t)) !== null) {
+                const rawVal = parseNumber(m[1]);
+                if (rawVal == null) continue;
+
+                const unit = (m[2] || "").toLowerCase(); // kcal | kj
+                const basis = (m[3] || m[4] || "").toLowerCase().replace(/\s+/g, ""); // kg|100g
+                candidates.push({ rawVal, unit, basis, match: m[0] });
+            }
+        }
+
+        if (!candidates.length) return null;
+
+        // Score candidates: prefer explicit /100g, then /kg, then plausible ranges
+        const score = (c) => {
+            let s = 0;
+            if (c.basis === "100g") s += 50;
+            if (c.basis === "kg") s += 40;
+            if (c.unit === "kcal") s += 10;
+            // Typical ranges:
+            // - per 100g (dry): ~250-500 kcal/100g
+            // - per kg: ~2500-5000 kcal/kg
+            if (!c.basis) {
+                if (c.rawVal >= 50 && c.rawVal <= 700) s += 15;      // likely per 100g
+                if (c.rawVal >= 1500 && c.rawVal <= 6000) s += 12;   // likely per kg
+            }
+            return s;
+        };
+
+        candidates.sort((a, b) => score(b) - score(a));
+        const best = candidates[0];
+
+        console.log(`Energy candidate: "${best.match}" -> raw=${best.rawVal} ${best.unit}/${best.basis || "?"}`);
+
+        // Convert to kcal
+        let kcal = best.rawVal;
+        if (best.unit === "kj") {
+            // 1 kcal = 4.184 kJ
+            kcal = kcal / 4.184;
+        }
+
+        // Convert basis to per 100g
+        if (best.basis === "kg") {
+            kcal = kcal / 10; // kcal/kg -> kcal/100g
+        } else if (best.basis === "100g") {
+            // ok
+        } else {
+            // Heuristic if no basis:
+            // if big number, assume per kg; else assume per 100g
+            if (kcal > 700) kcal = kcal / 10;
+        }
+
+        // sanity check
+        if (kcal < 10 || kcal > 800) return null;
+
+        // Round to 1 decimal for nicer UI
+        return Math.round(kcal * 10) / 10;
+    };
+
+    // ---------- PARSE ----------
     let foundValues = {};
     let foundCount = 0;
 
-    // Try each pattern for each nutrient
-    for (const [key, patternList] of Object.entries(patterns)) {
+    const tryParseKey = (key, textToUse, patternList, validatorFn) => {
         for (const pattern of patternList) {
-            const match = cleanText.match(pattern);
+            const match = textToUse.match(pattern);
             if (match) {
-                // Get the last captured group (the number)
-                let value = match[match.length - 1];
+                const valueStr = match[match.length - 1];
+                console.log(`Pattern matched for ${key}: "${match[0]}" -> value: "${valueStr}"`);
 
-                console.log(`Pattern matched for ${key}: "${match[0]}" -> value: "${value}"`);
+                const numValue = parseNumber(valueStr);
+                console.log(`Parsed number for ${key}:`, numValue);
 
-                // Handle OCR errors: O→0, l→1, S→5, I→1
-                value = value.replace(/o/gi, '0').replace(/[li]/gi, '1').replace(/s/gi, '5');
-
-                // Convert comma to dot (Italian decimal separator)
-                value = value.replace(',', '.');
-
-                // Remove any remaining non-numeric characters except dot
-                value = value.replace(/[^\d.]/g, '');
-
-                const numValue = parseFloat(value);
-
-                console.log(`Parsed number for ${key}: ${numValue}`);
-
-                if (key === 'kcal') {
-                    if (numValue > 50 && numValue < 600 && !foundValues[key]) {
-                        foundValues[key] = numValue;
-                        foundCount++;
-                        console.log(`✓ Found ${key}: ${numValue}`);
-                        break;
-                    }
-                } else {
-                    if (numValue > 0 && numValue < 100 && !foundValues[key]) {
-                        foundValues[key] = numValue;
-                        foundCount++;
-                        console.log(`✓ Found ${key}: ${numValue}`);
-                        break;
-                    }
+                if (numValue != null && validatorFn(numValue) && !foundValues[key]) {
+                    foundValues[key] = numValue;
+                    foundCount++;
+                    console.log(`✓ Found ${key}: ${numValue}`);
+                    return true;
                 }
             }
         }
-        if (!foundValues[key]) {
-            console.log(`✗ NOT found: ${key}`);
-        }
+        console.log(`✗ NOT found: ${key}`);
+        return false;
+    };
+
+    // Parse standard nutrients mainly from analysis section (more reliable)
+    tryParseKey("protein", analysisText, patterns.protein, (v) => v > 0 && v < 100);
+    tryParseKey("fat", analysisText, patterns.fat, (v) => v > 0 && v < 100);
+    tryParseKey("fiber", analysisText, patterns.fiber, (v) => v >= 0 && v < 100);
+    tryParseKey("ash", analysisText, patterns.ash, (v) => v >= 0 && v < 100);
+    tryParseKey("moisture", analysisText, patterns.moisture, (v) => v >= 0 && v < 100);
+
+    // Energy: scan full text (can appear outside the analysis table)
+    const kcalPer100g = parseEnergyToKcalPer100g(cleanText);
+    if (kcalPer100g != null) {
+        foundValues.kcal = kcalPer100g;
+        foundCount++;
+        console.log(`✓ Found kcal (per 100g): ${kcalPer100g}`);
+    } else {
+        console.log("✗ NOT found: kcal");
     }
 
-    console.log('=== FINAL RESULTS ===');
-    console.log('Found values:', foundValues);
-    console.log('Total found:', foundCount);
+    console.log("=== FINAL RESULTS ===");
+    console.log("Found values:", foundValues);
+    console.log("Total found:", foundCount);
 
-    // Apply found values to form
-    if (foundValues.protein) document.getElementById('protein').value = foundValues.protein;
-    if (foundValues.fat) document.getElementById('fat').value = foundValues.fat;
-    if (foundValues.fiber) document.getElementById('fiber').value = foundValues.fiber;
-    if (foundValues.moisture) document.getElementById('moisture').value = foundValues.moisture;
-    if (foundValues.ash) document.getElementById('ash').value = foundValues.ash;
-    if (foundValues.kcal) document.getElementById('kcalPer100g').value = foundValues.kcal;
+    // ---------- APPLY TO FORM ----------
+    if (foundValues.protein != null) document.getElementById("protein").value = foundValues.protein;
+    if (foundValues.fat != null) document.getElementById("fat").value = foundValues.fat;
+    if (foundValues.fiber != null) document.getElementById("fiber").value = foundValues.fiber;
+    if (foundValues.moisture != null) document.getElementById("moisture").value = foundValues.moisture;
+    if (foundValues.ash != null) document.getElementById("ash").value = foundValues.ash;
+    if (foundValues.kcal != null) document.getElementById("kcalPer100g").value = foundValues.kcal;
 
+    // ---------- UI FEEDBACK ----------
     if (foundCount > 0) {
-        // Highlight filled fields
-        if (foundValues.protein) highlightField('protein');
-        if (foundValues.fat) highlightField('fat');
-        if (foundValues.fiber) highlightField('fiber');
-        if (foundValues.moisture) highlightField('moisture');
-        if (foundValues.ash) highlightField('ash');
-        if (foundValues.kcal) highlightField('kcalPer100g');
+        if (foundValues.protein != null) highlightField("protein");
+        if (foundValues.fat != null) highlightField("fat");
+        if (foundValues.fiber != null) highlightField("fiber");
+        if (foundValues.moisture != null) highlightField("moisture");
+        if (foundValues.ash != null) highlightField("ash");
+        if (foundValues.kcal != null) highlightField("kcalPer100g");
 
-        // Show success message
         const missingFields = [];
-        if (!foundValues.protein) missingFields.push('Proteine');
-        if (!foundValues.fat) missingFields.push('Grassi');
-        if (!foundValues.fiber) missingFields.push('Fibre');
-        if (!foundValues.moisture) missingFields.push('Umidità');
+        if (foundValues.protein == null) missingFields.push("Proteine");
+        if (foundValues.fat == null) missingFields.push("Grassi");
+        if (foundValues.fiber == null) missingFields.push("Fibre");
+        if (foundValues.ash == null) missingFields.push("Ceneri");
+        if (foundValues.moisture == null) missingFields.push("Umidità");
+        if (foundValues.kcal == null) missingFields.push("Energia (kcal/100g)");
 
         let message = `✅ Trovati ${foundCount} valori!\n\nVerifica che siano corretti.`;
 
         if (missingFields.length > 0) {
-            message += `\n\n⚠️ Mancano:\n${missingFields.join(', ')}`;
+            message += `\n\n⚠️ Mancano:\n${missingFields.join(", ")}`;
             message += `\n\nInseriscili manualmente.`;
         }
 
         alert(message);
     } else {
-        alert('⚠️ Nessun valore rilevato.\n\nProva a:\n• Ritagliare meglio la tabella\n• Scattare con più luce\n• Aprire la Console (F12) per vedere i dettagli\n• Inserire i valori manualmente');
+        alert(
+            "⚠️ Nessun valore rilevato.\n\nProva a:\n• Ritagliare meglio la tabella\n• Scattare con più luce\n• Aprire la Console (F12) per vedere i dettagli\n• Inserire i valori manualmente"
+        );
     }
 }
