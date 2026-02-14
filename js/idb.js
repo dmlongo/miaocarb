@@ -145,6 +145,40 @@
     return { catalog, changed };
   }
 
+  async function compressBlob(id, maxDim, quality) {
+    const blob = await getBlob(id);
+    if (!blob) return false;
+    const url = URL.createObjectURL(blob);
+    try {
+      const compressed = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = function () {
+          let w = img.width, h = img.height;
+          if (w <= maxDim && h <= maxDim) { resolve(null); return; }
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          c.toBlob((b) => resolve(b), 'image/jpeg', quality);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = url;
+      });
+      if (!compressed) return false; // already small enough
+      await tx(STORE, "readwrite", (s) => s.put({ id, blob: compressed, createdAt: Date.now() }));
+      if (objectUrlCache.has(id)) {
+        URL.revokeObjectURL(objectUrlCache.get(id));
+        objectUrlCache.delete(id);
+      }
+      return true;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   window.imagesDB = {
     init: openDB,
     putDataUrl,
@@ -154,5 +188,6 @@
     deleteMany,
     revokeAllObjectUrls,
     migrateCatalogImages,
+    compressBlob,
   };
 })();

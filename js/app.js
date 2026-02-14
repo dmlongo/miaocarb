@@ -29,6 +29,27 @@ let swipeStartY = 0;
 let swipeTracking = false;
 
 
+// ============= IMAGE COMPRESSION =============
+function compressImage(dataUrl, maxDim, quality) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = function () {
+            let w = img.width, h = img.height;
+            if (w <= maxDim && h <= maxDim) { resolve(dataUrl); return; }
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(c.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+    });
+}
+
 // ============= INITIALIZATION =============
 document.addEventListener('DOMContentLoaded', function () {
     loadProfile();
@@ -36,6 +57,7 @@ document.addEventListener('DOMContentLoaded', function () {
     checkOnboarding();
     loadSettings();
     initializeEventListeners();
+    migrateCompressImages();
 });
 
 function initializeEventListeners() {
@@ -258,8 +280,8 @@ function handleFrontPhoto(e) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function (event) {
-        frontImage = event.target.result;
+    reader.onload = async function (event) {
+        frontImage = await compressImage(event.target.result, 800, 0.80);
         const preview = document.getElementById('frontPreview');
         preview.src = frontImage;
         preview.style.display = 'block';
@@ -291,7 +313,7 @@ async function handleLabelPhoto(e) {
 
     const reader = new FileReader();
     reader.onload = async function (event) {
-        originalLabelImage = event.target.result;
+        originalLabelImage = await compressImage(event.target.result, 1500, 0.90);
         labelImage = originalLabelImage;
 
         // Show preview
@@ -1225,6 +1247,16 @@ async function loadCatalog() {
     hydrateCatalogImages();
 }
 
+async function hydrateCatalogImages() {
+    try { await imagesDB.init(); } catch (e) { return; }
+    const imgs = document.querySelectorAll('[data-imgid]');
+    for (const img of imgs) {
+        const id = img.dataset.imgid;
+        const url = await imagesDB.getObjectUrl(id);
+        if (url) img.src = url;
+    }
+}
+
 function useToday(name, grams) {
     alert(`📋 ${name}\n\n🍽️ Dai ${grams}g oggi\n\nDividi in 2-3 pasti durante la giornata.`);
 }
@@ -1274,6 +1306,21 @@ async function cleanupOrphanImages() {
         console.warn('cleanupOrphanImages failed:', e);
         alert('❌ Impossibile completare la pulizia (errore IndexedDB).');
     }
+}
+
+async function migrateCompressImages() {
+    if (appStorage.get('imagesCompressed')) return;
+    try {
+        await imagesDB.init();
+        const catalog = appStorage.getJSON('foodCatalog', []);
+        for (const item of catalog) {
+            if (item && item.frontImageId) await imagesDB.compressBlob(item.frontImageId, 800, 0.80);
+            if (item && item.labelImageId) await imagesDB.compressBlob(item.labelImageId, 1500, 0.90);
+        }
+    } catch (e) {
+        console.warn('migrateCompressImages failed:', e);
+    }
+    appStorage.set('imagesCompressed', '1');
 }
 
 // ============= SHARE =============
